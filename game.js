@@ -1,6 +1,5 @@
-// Simple Ragdoll Basket Game using Matter.js
+// Ragdoll Volleyball Game using Matter.js
 
-// Matter.js modules
 const { Engine, Render, Runner, World, Bodies, Body, Constraint, Composite, Events } = Matter;
 
 // Game setup
@@ -23,8 +22,6 @@ const render = Render.create({
   }
 });
 Render.run(render);
-
-// Runner
 const runner = Runner.create();
 Runner.run(runner, engine);
 
@@ -34,14 +31,12 @@ const leftWall = Bodies.rectangle(0, height/2, 40, height, { isStatic: true, ren
 const rightWall = Bodies.rectangle(width, height/2, 40, height, { isStatic: true, render: { fillStyle: "#666" } });
 World.add(world, [ground, leftWall, rightWall]);
 
-// Basket (simple hoop)
-const basketX = width-80;
-const basketY = 200;
-const basket = Bodies.rectangle(basketX, basketY, 80, 12, { isStatic: true, render: { fillStyle: "#f8b400" } });
-World.add(world, basket);
+// Net in the center
+const net = Bodies.rectangle(width/2, height-175, 18, 350, { isStatic: true, render: { fillStyle: "#fff" } });
+World.add(world, net);
 
-// Basketball
-const ball = Bodies.circle(width/2, height/2, 20, { restitution: 0.7, render: { fillStyle: "#f88300" } });
+// Volleyball
+const ball = Bodies.circle(width/2, height/2, 22, { restitution: 0.88, friction: 0.001, render: { fillStyle: "#f8f8aa", strokeStyle: "#aaa", lineWidth: 3 } });
 World.add(world, ball);
 
 // Helper: create a ragdoll
@@ -84,7 +79,7 @@ function createRagdoll(x, y, color="#fff") {
   const ragdoll = Composite.create({ bodies: parts, constraints: constraints });
   World.add(world, ragdoll);
 
-  return { parts, ragdoll, head, torso, handL, handR, footL, footR };
+  return { parts, ragdoll, head, torso, upperArmL, upperArmR, lowerArmL, lowerArmR, handL, handR, footL, footR };
 }
 
 // Player and bot ragdolls
@@ -102,43 +97,87 @@ document.addEventListener('keyup', e => {
 
 // Move player ragdoll
 Events.on(engine, 'beforeUpdate', function() {
-  // Move left/right
+  // Move left/right (A/D)
   if (keys['a']) {
-    Body.applyForce(player.torso, player.torso.position, { x: -0.005, y: 0 });
+    Body.applyForce(player.torso, player.torso.position, { x: -0.007, y: 0 });
   }
   if (keys['d']) {
-    Body.applyForce(player.torso, player.torso.position, { x: 0.005, y: 0 });
+    Body.applyForce(player.torso, player.torso.position, { x: 0.007, y: 0 });
   }
-  // Jump if feet are touching ground
-  if (keys['w'] && (player.footL.position.y > height-50 || player.footR.position.y > height-50)) {
-    Body.applyForce(player.torso, player.torso.position, { x: 0, y: -0.08 });
+  // Jump (W)
+  if (keys['w'] && (player.footL.position.y > height-55 || player.footR.position.y > height-55)) {
+    Body.applyForce(player.torso, player.torso.position, { x: 0, y: -0.11 });
   }
 });
 
-// Simple bot AI: random left/right, sometimes jumps
-setInterval(() => {
-  // Move randomly left/right
-  const dir = Math.random() > 0.5 ? 1 : -1;
-  Body.applyForce(bot.torso, bot.torso.position, { x: 0.004 * dir, y: 0 });
-  // Random jump
-  if (Math.random() < 0.2 && (bot.footL.position.y > height-50 || bot.footR.position.y > height-50)) {
-    Body.applyForce(bot.torso, bot.torso.position, { x: 0, y: -0.07 });
-  }
-}, 400);
+// Player arms up and hit (Space)
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    // Move arms up for animation
+    Body.setAngle(player.upperArmL, -Math.PI/2.2);
+    Body.setAngle(player.upperArmR, Math.PI/2.2);
 
-// Scoring
+    // If ball is close enough to a hand, "hit" it
+    const hitForce = 0.25;
+    if (Matter.Vector.magnitude(Matter.Vector.sub(player.handL.position, ball.position)) < 45) {
+      Body.applyForce(ball, ball.position, {x: hitForce, y: -hitForce});
+    }
+    if (Matter.Vector.magnitude(Matter.Vector.sub(player.handR.position, ball.position)) < 45) {
+      Body.applyForce(ball, ball.position, {x: hitForce, y: -hitForce});
+    }
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') {
+    // Return arms to down position
+    Body.setAngle(player.upperArmL, 0);
+    Body.setAngle(player.upperArmR, 0);
+  }
+});
+
+// Simple bot AI: move, jump, and "hit" with arms up if ball is close
+setInterval(() => {
+  // Only move if ball is on bot's side
+  if (ball.position.x > width/2 || Math.random() < 0.3) {
+    const dir = (ball.position.x > bot.torso.position.x) ? 1 : -1;
+    Body.applyForce(bot.torso, bot.torso.position, { x: 0.006 * dir, y: 0 });
+  }
+  // Jump if ball is above
+  if (Math.abs(ball.position.x - bot.torso.position.x) < 50 && ball.position.y < bot.torso.position.y-10 && (bot.footL.position.y > height-50 || bot.footR.position.y > height-50)) {
+    Body.applyForce(bot.torso, bot.torso.position, { x: 0, y: -0.10 });
+  }
+  // Simulate "hit" (arms up) if ball is near hands
+  const botHitForce = 0.22;
+  if (Matter.Vector.magnitude(Matter.Vector.sub(bot.handL.position, ball.position)) < 45) {
+    Body.setAngle(bot.upperArmL, -Math.PI/2.2);
+    setTimeout(()=>Body.setAngle(bot.upperArmL, 0), 200);
+    Body.applyForce(ball, ball.position, {x: -botHitForce, y: -botHitForce});
+  }
+  if (Matter.Vector.magnitude(Matter.Vector.sub(bot.handR.position, ball.position)) < 45) {
+    Body.setAngle(bot.upperArmR, Math.PI/2.2);
+    setTimeout(()=>Body.setAngle(bot.upperArmR, 0), 200);
+    Body.applyForce(ball, ball.position, {x: -botHitForce, y: -botHitForce});
+  }
+}, 180);
+
+// Scoring: ball hits ground on a side
 let playerScore = 0;
 let botScore = 0;
 function checkScore() {
-  // Ball in basket area?
-  if (ball.position.x > basketX-40 && ball.position.x < basketX+40 &&
-      ball.position.y > basketY-30 && ball.position.y < basketY+30) {
-    // Who last touched?
-    if (ball.position.x < width/2) playerScore++;
-    else botScore++;
-    // Reset ball position
+  // Ball below a certain height
+  if (ball.position.y > height-45) {
+    if (ball.position.x < width/2) {
+      botScore++;
+    } else {
+      playerScore++;
+    }
+    // Reset ball and ragdolls
     Body.setPosition(ball, { x: width/2, y: height/2 });
     Body.setVelocity(ball, { x: 0, y: 0 });
+    Body.setPosition(player.torso, { x: 180, y: height-120 });
+    Body.setVelocity(player.torso, { x: 0, y: 0 });
+    Body.setPosition(bot.torso, { x: width-180, y: height-120 });
+    Body.setVelocity(bot.torso, { x: 0, y: 0 });
   }
 }
 Events.on(engine, 'afterUpdate', checkScore);
@@ -149,7 +188,7 @@ function drawScore() {
   ctx.save();
   ctx.font = "32px Arial";
   ctx.fillStyle = "#fff";
-  ctx.fillText(`Player: ${playerScore}`, 40, 50);
+  ctx.fillText(`You: ${playerScore}`, 60, 50);
   ctx.fillText(`Bot: ${botScore}`, width-160, 50);
   ctx.restore();
 }
